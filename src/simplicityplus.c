@@ -4,9 +4,13 @@
 
 #define BT_CONNECTION_STATUS_DEFAULT false
 
+#define KEY_REQUEST_BATTERY 1
+#define KEY_BATTERY_LEVEL 0
+
 static Window *window;
 static BitmapLayer *bitmap_bluetooth_layer;
 static GBitmap *bitmap_bluetooth;
+static TextLayer *text_phone_battery_layer;
 static TextLayer *text_battery_layer;
 static TextLayer *text_day_layer;
 static TextLayer *text_date_layer;
@@ -20,7 +24,18 @@ static char day_text[] = "Xxxxxxxxx";
 static char date_text[] = "Xxxxxxxxx 00";
 static char time_text[] = "00:00";
 static char ampm_text[] = "XX";
+static char battery_text[] = "100%";
+static char phone_battery_text[] = "100%";
 static char *time_format;
+
+static void send(int key, int value) {
+  DictionaryIterator *iter;
+  app_message_outbox_begin(&iter);
+
+  dict_write_int(iter, key, &value, sizeof(int), true);
+
+  app_message_outbox_send();
+}
 
 static void line_layer_update_callback(Layer *layer, GContext* ctx) {
 	graphics_context_set_fill_color(ctx, GColorWhite);
@@ -31,6 +46,8 @@ static void handle_bluetooth(bool connected) {
 	if (bt_connection_status != connected) {
 		if (connected) {
 			bitmap_layer_set_bitmap(bitmap_bluetooth_layer, bitmap_bluetooth);
+      
+      send(KEY_REQUEST_BATTERY, 0);
 		} else {
 			VibePattern pattern = {
 				.durations = segments,
@@ -39,6 +56,7 @@ static void handle_bluetooth(bool connected) {
 			vibes_enqueue_custom_pattern(pattern);
 
 			bitmap_layer_set_bitmap(bitmap_bluetooth_layer, NULL);
+      text_layer_set_text(text_phone_battery_layer, NULL);
 		}
 		
 		bt_connection_status = connected;
@@ -46,9 +64,14 @@ static void handle_bluetooth(bool connected) {
 }
 
 static void handle_battery(BatteryChargeState charge_state) {
-	static char battery_text[] = "100%";
 	snprintf(battery_text, sizeof(battery_text), "%d%%", charge_state.charge_percent);
 	text_layer_set_text(text_battery_layer, battery_text);
+}
+
+static void receive_data_handler(DictionaryIterator *iterator, void *context) {
+  Tuple *result_tuple = dict_find(iterator, KEY_BATTERY_LEVEL);
+  snprintf(phone_battery_text, sizeof(phone_battery_text), "%d%%", (int) result_tuple->value->int32);
+	text_layer_set_text(text_phone_battery_layer, phone_battery_text);
 }
 
 static void handle_minute_tick(struct tm *tick_time, TimeUnits units_changed) {
@@ -77,6 +100,10 @@ static void handle_minute_tick(struct tm *tick_time, TimeUnits units_changed) {
 	}
 
 	text_layer_set_text(text_time_layer, time_text);
+  
+  if (bt_connection_status) {
+    send(KEY_REQUEST_BATTERY, 0);
+  }
 }
 
 static void handle_init(void) {
@@ -92,7 +119,13 @@ static void handle_init(void) {
 	bitmap_bluetooth = gbitmap_create_with_resource(RESOURCE_ID_IMAGE_BLUETOOTH_ICON);
 	bitmap_bluetooth_layer = bitmap_layer_create(GRect(10, 9, 10, 13));
 	layer_add_child(window_layer, bitmap_layer_get_layer(bitmap_bluetooth_layer));
-
+  
+  text_phone_battery_layer = text_layer_create(GRect(25, 3, 50, 21));
+	text_layer_set_text_color(text_phone_battery_layer, GColorWhite);
+	text_layer_set_background_color(text_phone_battery_layer, GColorClear);
+	text_layer_set_font(text_phone_battery_layer, font_square_medium);
+	layer_add_child(window_layer, text_layer_get_layer(text_phone_battery_layer));
+  
 	text_battery_layer = text_layer_create(GRect(5, 3, 134, 21));
 	text_layer_set_text_color(text_battery_layer, GColorWhite);
 	text_layer_set_background_color(text_battery_layer, GColorClear);
@@ -147,7 +180,10 @@ static void handle_init(void) {
     .pebble_app_connection_handler = handle_bluetooth
   });
 	handle_bluetooth(connection_service_peek_pebble_app_connection());
-
+  
+  app_message_register_inbox_received(receive_data_handler);
+  app_message_open(12, 12);
+  
 	battery_state_service_subscribe(handle_battery);
 	handle_battery(battery_state_service_peek());
 
@@ -159,6 +195,7 @@ static void handle_deinit(void) {
 	connection_service_unsubscribe();
 	battery_state_service_unsubscribe();
 	tick_timer_service_unsubscribe();
+  app_message_deregister_callbacks();
 
   persist_write_bool(BT_CONNECTION_STATUS_KEY, bt_connection_status);
   
