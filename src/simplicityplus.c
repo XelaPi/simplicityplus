@@ -1,11 +1,16 @@
 #include "pebble.h"
 
-#define BT_CONNECTION_STATUS_KEY 1
+#define KEY_BT_CONNECTION_STATUS 1
+#define KEY_PHONE_BATTERY 2
 
-#define BT_CONNECTION_STATUS_DEFAULT false
+#define DEFAULT_BT_CONNECTION_STATUS false
+#define DEFAULT_PHONE_BATTERY -1
 
-#define KEY_REQUEST_BATTERY 1
 #define KEY_BATTERY_LEVEL 0
+#define KEY_REQUEST_BATTERY 1
+
+#define INTERVAL_PHONE_BATTERY 600000
+#define INTERVAL_STANDARD_WAIT 2000
 
 static Window *window;
 static BitmapLayer *bitmap_bluetooth_layer;
@@ -17,24 +22,32 @@ static TextLayer *text_date_layer;
 static TextLayer *text_time_layer;
 static TextLayer *text_ampm_layer;
 static Layer *line_layer;
-static bool bt_connection_status = false;
+
+static bool bt_connection_status;
+static int phone_battery;
 static const uint32_t segments[] = {2000};
 
 static char day_text[] = "Xxxxxxxxx";
 static char date_text[] = "Xxxxxxxxx 00";
 static char time_text[] = "00:00";
 static char ampm_text[] = "XX";
-static char battery_text[] = "100%";
-static char phone_battery_text[] = "100%";
+static char battery_text[] = "1XX%";
+static char phone_battery_text[] = "1XX%";
 static char *time_format;
 
-static void send(int key, int value) {
-  DictionaryIterator *iter;
-  app_message_outbox_begin(&iter);
+static AppTimer *timer_phone_battery;
 
-  dict_write_int(iter, key, &value, sizeof(int), true);
-
-  app_message_outbox_send();
+static void handle_battery_timer(void* data) {
+  if (bt_connection_status) {
+    DictionaryIterator *iter;
+    app_message_outbox_begin(&iter);
+  
+    dict_write_int32(iter, KEY_REQUEST_BATTERY, 0);
+  
+    app_message_outbox_send();
+  }
+  
+  timer_phone_battery = app_timer_register(INTERVAL_PHONE_BATTERY, handle_battery_timer, NULL);
 }
 
 static void line_layer_update_callback(Layer *layer, GContext* ctx) {
@@ -43,24 +56,29 @@ static void line_layer_update_callback(Layer *layer, GContext* ctx) {
 }
 
 static void handle_bluetooth(bool connected) {
-	if (bt_connection_status != connected) {
-		if (connected) {
-			bitmap_layer_set_bitmap(bitmap_bluetooth_layer, bitmap_bluetooth);
-      
-      send(KEY_REQUEST_BATTERY, 0);
-		} else {
-			VibePattern pattern = {
-				.durations = segments,
-				.num_segments = ARRAY_LENGTH(segments),
-			};
-			vibes_enqueue_custom_pattern(pattern);
-
-			bitmap_layer_set_bitmap(bitmap_bluetooth_layer, NULL);
-      text_layer_set_text(text_phone_battery_layer, NULL);
-		}
-		
-		bt_connection_status = connected;
-	}
+		if (connected != bt_connection_status) {
+      if (connected) {
+			  bitmap_layer_set_bitmap(bitmap_bluetooth_layer, bitmap_bluetooth);
+        
+        if (phone_battery >= 0) {
+          text_layer_set_text(text_phone_battery_layer, phone_battery_text);
+        }
+        
+        app_timer_cancel(timer_phone_battery);
+        timer_phone_battery = app_timer_register(INTERVAL_STANDARD_WAIT, handle_battery_timer, NULL);
+		  } else {
+			  VibePattern pattern = {
+				  .durations = segments,
+				  .num_segments = ARRAY_LENGTH(segments),
+			  };
+			  vibes_enqueue_custom_pattern(pattern);
+        
+			  bitmap_layer_set_bitmap(bitmap_bluetooth_layer, NULL);
+        text_layer_set_text(text_phone_battery_layer, NULL);
+		  }
+		  
+		  bt_connection_status = connected;
+    }
 }
 
 static void handle_battery(BatteryChargeState charge_state) {
@@ -70,7 +88,10 @@ static void handle_battery(BatteryChargeState charge_state) {
 
 static void receive_data_handler(DictionaryIterator *iterator, void *context) {
   Tuple *result_tuple = dict_find(iterator, KEY_BATTERY_LEVEL);
-  snprintf(phone_battery_text, sizeof(phone_battery_text), "%d%%", (int) result_tuple->value->int32);
+  
+  phone_battery = (int) result_tuple->value->int32;
+  
+  snprintf(phone_battery_text, sizeof(phone_battery_text), "%d%%", phone_battery);
 	text_layer_set_text(text_phone_battery_layer, phone_battery_text);
 }
 
@@ -79,6 +100,8 @@ static void handle_minute_tick(struct tm *tick_time, TimeUnits units_changed) {
 	if (!tick_time) {
 		time_t now = time(NULL);
 		tick_time = localtime(&now);
+    app_timer_cancel(timer_phone_battery);
+    timer_phone_battery = app_timer_register(INTERVAL_STANDARD_WAIT, handle_battery_timer, NULL);
 	}
 
 	if (units_changed >= DAY_UNIT) {
@@ -100,10 +123,6 @@ static void handle_minute_tick(struct tm *tick_time, TimeUnits units_changed) {
 	}
 
 	text_layer_set_text(text_time_layer, time_text);
-  
-  if (bt_connection_status) {
-    send(KEY_REQUEST_BATTERY, 0);
-  }
 }
 
 static void handle_init(void) {
@@ -174,15 +193,21 @@ static void handle_init(void) {
 	layer_set_update_proc(line_layer, line_layer_update_callback);
 	layer_add_child(window_layer, line_layer);
 
-	bt_connection_status = persist_exists(BT_CONNECTION_STATUS_KEY) ? persist_read_int(BT_CONNECTION_STATUS_KEY) : BT_CONNECTION_STATUS_DEFAULT;
+	bt_connection_status = persist_exists(KEY_BT_CONNECTION_STATUS) ? persist_read_int(KEY_BT_CONNECTION_STATUS) : DEFAULT_BT_CONNECTION_STATUS;
+  
+  phone_battery = persist_exists(KEY_PHONE_BATTERY) ? persist_read_int(KEY_PHONE_BATTERY) : DEFAULT_PHONE_BATTERY;
+  
+  if (phone_battery >= 0) {
+    snprintf(phone_battery_text, sizeof(phone_battery_text), "%d%%", phone_battery);
+  }
+  
+  app_message_register_inbox_received(receive_data_handler);
+  app_message_open(12, 12);
   
   connection_service_subscribe((ConnectionHandlers) {
     .pebble_app_connection_handler = handle_bluetooth
   });
 	handle_bluetooth(connection_service_peek_pebble_app_connection());
-  
-  app_message_register_inbox_received(receive_data_handler);
-  app_message_open(12, 12);
   
 	battery_state_service_subscribe(handle_battery);
 	handle_battery(battery_state_service_peek());
@@ -197,7 +222,8 @@ static void handle_deinit(void) {
 	tick_timer_service_unsubscribe();
   app_message_deregister_callbacks();
 
-  persist_write_bool(BT_CONNECTION_STATUS_KEY, bt_connection_status);
+  persist_write_bool(KEY_BT_CONNECTION_STATUS, bt_connection_status);
+  persist_write_int(KEY_PHONE_BATTERY, phone_battery);
   
 	gbitmap_destroy(bitmap_bluetooth);
   bitmap_layer_destroy(bitmap_bluetooth_layer);
