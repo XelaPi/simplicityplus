@@ -1,0 +1,60 @@
+{
+    "author": "PiGuy",
+    "dependencies": {},
+    "keywords": [],
+    "name": "simplicity",
+    "pebble": {
+        "displayName": "Simplicity+",
+        "enableMultiJS": true,
+        "messageKeys": [],
+        "projectType": "native",
+        "resources": {
+            "media": [
+                {
+                    "file": "images/image_menu_icon",
+                    "menuIcon": true,
+                    "name": "IMAGE_MENU_ICON_SIMPLICITY_PLUS",
+                    "targetPlatforms": null,
+                    "type": "bitmap"
+                },
+                {
+                    "file": "images/image_bluetooth_icon",
+                    "name": "IMAGE_BLUETOOTH_ICON",
+                    "targetPlatforms": null,
+                    "type": "bitmap"
+                },
+                {
+                    "characterRegex": "[ 0-9A-Za-z%]",
+                    "file": "fonts/Square.ttf",
+                    "name": "FONT_SQUARE_19",
+                    "targetPlatforms": null,
+                    "type": "font"
+                },
+                {
+                    "characterRegex": "[:0-9]",
+                    "file": "fonts/Square.ttf",
+                    "name": "FONT_SQUARE_58",
+                    "targetPlatforms": null,
+                    "type": "font"
+                },
+                {
+                    "characterRegex": "[:0-9]",
+                    "file": "fonts/Square.ttf",
+                    "name": "FONT_SQUARE_51",
+                    "targetPlatforms": null,
+                    "type": "font"
+                }
+            ]
+        },
+        "sdkVersion": "3",
+        "targetPlatforms": [
+            "aplite",
+            "basalt"
+        ],
+        "uuid": "d6a34819-636d-48bf-b3ee-292e48cd7da0",
+        "watchapp": {
+            "watchface": true
+        }
+    },
+    "version": "1.0.0"
+}
