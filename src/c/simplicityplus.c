@@ -13,7 +13,12 @@
 #define INTERVAL_PHONE_BATTERY 600000 // 60 * 10 * 1000 = 10 minutes
 #define INTERVAL_STANDARD_WAIT 2000
 
+static const int line_offset = 83;
+static const int time_offset = 78;
+static const int ampm_offset = 136;
+
 static Window *window;
+static Layer *window_layer;
 static BitmapLayer *bitmap_bluetooth_layer;
 static GBitmap *bitmap_bluetooth;
 static TextLayer *text_phone_battery_layer;
@@ -50,6 +55,7 @@ static void receive_data_handler(DictionaryIterator *iterator, void *context);
 static void handle_minute_tick(struct tm *tick_time, TimeUnits units_changed);
 static void handle_init(void);
 static void handle_deinit(void);
+static void prv_unobstructed_change(AnimationProgress progress, void *context);
 
 static void handle_battery_timer(void* data) {
   if (bt_connection_status) {
@@ -71,8 +77,17 @@ static void handle_battery_timer(void* data) {
 }
 
 static void line_layer_update_callback(Layer *layer, GContext* ctx) {
+	
+  GRect bounds = layer_get_bounds(layer);
+  GRect line_bounds = GRect(8, bounds.origin.y, 139, 2);
+  
   graphics_context_set_fill_color(ctx, text_color);
-	graphics_fill_rect(ctx, layer_get_bounds(layer), 0, GCornerNone);
+  graphics_fill_rect(ctx, line_bounds, 0, GCornerNone);
+  
+  bounds.origin.y += line_bounds.size.h;
+  
+  graphics_context_set_fill_color(ctx, GColorBlack);
+  graphics_fill_rect(ctx, bounds, 0, GCornerNone);
 }
 
 static void handle_bluetooth(bool connected) {
@@ -179,12 +194,31 @@ static void handle_minute_tick(struct tm *tick_time, TimeUnits units_changed) {
 	text_layer_set_text(text_time_layer, time_text);
 }
 
+static void prv_unobstructed_change(AnimationProgress progress, void *context) {
+  GRect bounds = layer_get_unobstructed_bounds(window_layer);
+  int vertical_offset = 168 - bounds.size.h;
+
+  GRect line_frame = layer_get_frame(line_layer);
+  line_frame.origin.y = line_offset - vertical_offset;
+  layer_set_frame(line_layer, line_frame);
+  
+  GRect time_frame = layer_get_frame(text_layer_get_layer(text_time_layer));
+  time_frame.origin.y = time_offset - vertical_offset;
+  layer_set_frame(text_layer_get_layer(text_time_layer), time_frame);
+  
+  if (!clock_is_24h_style()) {
+    GRect ampm_frame = layer_get_frame(text_layer_get_layer(text_ampm_layer));
+    ampm_frame.origin.y = ampm_offset - vertical_offset;
+    layer_set_frame(text_layer_get_layer(text_ampm_layer), ampm_frame);
+  }
+}
+
 static void handle_init(void) {
 	window = window_create();
 	window_stack_push(window, true);
 	window_set_background_color(window, GColorBlack);
 
-	Layer *window_layer = window_get_root_layer(window);
+	window_layer = window_get_root_layer(window);
 
 	GFont font_square_medium = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_SQUARE_19));
   GFont font_square_large;
@@ -215,25 +249,30 @@ static void handle_init(void) {
 	text_layer_set_font(text_battery_layer, font_square_medium);
 	layer_add_child(window_layer, text_layer_get_layer(text_battery_layer));
 
-	text_day_layer = text_layer_create(GRect(5, 30, 134, 21));
+	text_day_layer = text_layer_create(GRect(5, 36, 134, 21));
 	text_layer_set_text_color(text_day_layer, text_color);
 	text_layer_set_background_color(text_day_layer, GColorClear);
 	text_layer_set_text_alignment(text_day_layer, GTextAlignmentRight);
 	text_layer_set_font(text_day_layer, font_square_medium);
 	layer_add_child(window_layer, text_layer_get_layer(text_day_layer));
 
-	text_date_layer = text_layer_create(GRect(5, 48, 134, 21));
+	text_date_layer = text_layer_create(GRect(5, 54, 134, 21));
 	text_layer_set_text_color(text_date_layer, text_color);
 	text_layer_set_background_color(text_date_layer, GColorClear);
 	text_layer_set_text_alignment(text_date_layer, GTextAlignmentRight);
 	text_layer_set_font(text_date_layer, font_square_medium);
 	layer_add_child(window_layer, text_layer_get_layer(text_date_layer));
   
+  GRect line_frame = GRect(0, line_offset, 144, 168 - line_offset);
+	line_layer = layer_create(line_frame);
+	layer_set_update_proc(line_layer, line_layer_update_callback);
+	layer_add_child(window_layer, line_layer);
+  
   if (clock_is_24h_style()) {
     time_format = "%R";
     font_square_large = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_SQUARE_51));
   } else {
-	  text_ampm_layer = text_layer_create(GRect(5, 130, 134, 21));
+	  text_ampm_layer = text_layer_create(GRect(5, ampm_offset, 134, 21));
 	  text_layer_set_text_color(text_ampm_layer, text_color);
 	  text_layer_set_background_color(text_ampm_layer, GColorClear);
 	  text_layer_set_text_alignment(text_ampm_layer, GTextAlignmentRight);
@@ -244,17 +283,12 @@ static void handle_init(void) {
     font_square_large = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_SQUARE_58));
   }
   
-  text_time_layer = text_layer_create(GRect(5, 72, 134, 60));
+  text_time_layer = text_layer_create(GRect(5, time_offset, 134, 60));
 	text_layer_set_text_color(text_time_layer, text_color);
 	text_layer_set_background_color(text_time_layer, GColorClear);
 	text_layer_set_text_alignment(text_time_layer, GTextAlignmentRight);
 	text_layer_set_font(text_time_layer, font_square_large);
 	layer_add_child(window_layer, text_layer_get_layer(text_time_layer));
-  
-	GRect line_frame = GRect(8, 77, 139, 2);
-	line_layer = layer_create(line_frame);
-	layer_set_update_proc(line_layer, line_layer_update_callback);
-	layer_add_child(window_layer, line_layer);
   
   app_message_register_inbox_received(receive_data_handler);
   app_message_open(12, 12);
@@ -263,6 +297,10 @@ static void handle_init(void) {
     .pebble_app_connection_handler = handle_bluetooth
   });
 	handle_bluetooth(connection_service_peek_pebble_app_connection());
+  
+  unobstructed_area_service_subscribe((UnobstructedAreaHandlers) {
+    .change = prv_unobstructed_change
+  }, NULL);
   
 	battery_state_service_subscribe(handle_battery);
 	handle_battery(battery_state_service_peek());
@@ -274,6 +312,7 @@ static void handle_init(void) {
 static void handle_deinit(void) {
   // Unsubscribe from events
 	connection_service_unsubscribe();
+  unobstructed_area_service_unsubscribe();
 	battery_state_service_unsubscribe();
 	tick_timer_service_unsubscribe();
   app_message_deregister_callbacks();
