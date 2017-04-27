@@ -263,7 +263,10 @@ static void handle_init(void) {
 	text_layer_set_font(text_date_layer, font_square_medium);
 	layer_add_child(window_layer, text_layer_get_layer(text_date_layer));
   
-  GRect line_frame = GRect(0, line_offset, 144, 168 - line_offset);
+  GRect bounds = layer_get_unobstructed_bounds(window_layer);
+  int vertical_offset = 168 - bounds.size.h;
+  
+  GRect line_frame = GRect(0, line_offset - vertical_offset, 144, 168 - line_offset);
 	line_layer = layer_create(line_frame);
 	layer_set_update_proc(line_layer, line_layer_update_callback);
 	layer_add_child(window_layer, line_layer);
@@ -272,7 +275,7 @@ static void handle_init(void) {
     time_format = "%R";
     font_square_large = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_SQUARE_51));
   } else {
-	  text_ampm_layer = text_layer_create(GRect(5, ampm_offset, 134, 21));
+	  text_ampm_layer = text_layer_create(GRect(5, ampm_offset - vertical_offset, 134, 21));
 	  text_layer_set_text_color(text_ampm_layer, text_color);
 	  text_layer_set_background_color(text_ampm_layer, GColorClear);
 	  text_layer_set_text_alignment(text_ampm_layer, GTextAlignmentRight);
@@ -283,7 +286,7 @@ static void handle_init(void) {
     font_square_large = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_SQUARE_58));
   }
   
-  text_time_layer = text_layer_create(GRect(5, time_offset, 134, 60));
+  text_time_layer = text_layer_create(GRect(5, time_offset - vertical_offset, 134, 60));
 	text_layer_set_text_color(text_time_layer, text_color);
 	text_layer_set_background_color(text_time_layer, GColorClear);
 	text_layer_set_text_alignment(text_time_layer, GTextAlignmentRight);
